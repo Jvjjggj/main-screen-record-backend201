@@ -1,4 +1,4 @@
-// server.js (with upload + fetch + stream + CORS fix)
+// server.js
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
@@ -7,14 +7,10 @@ const multer = require("multer");
 const cors = require("cors");
 
 const app = express();
-const PORT = 4001;
+const PORT = process.env.PORT || 4001;
 
-// --- enable CORS (for frontend-backend communication) ---
-app.use(cors({
-  origin: "*", // allow all origins (adjust later for production)
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"],
-}));
+// --- enable CORS for frontend ---
+app.use(cors());
 
 // --- ensure uploads folder exists ---
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -22,7 +18,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// --- multer setup ---
+// --- multer setup (field name: "video") ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOAD_DIR);
@@ -61,7 +57,7 @@ db.serialize(() => {
 
 // --- root route ---
 app.get("/", (req, res) => {
-  res.send("✅ Server is running");
+  res.send("✅ Backend is running");
 });
 
 // --- health route ---
@@ -88,8 +84,7 @@ app.get("/api/recordings", (req, res) => {
 });
 
 // --- API: upload a new recording ---
-// ✅ expect "recording" as field name (matches frontend)
-app.post("/api/recordings", upload.single("recording"), (req, res) => {
+app.post("/api/recordings", upload.single("video"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
@@ -135,8 +130,11 @@ app.get("/api/recordings/:id", (req, res) => {
     }
 
     const filePath = row.filepath;
-    const stat = fs.statSync(filePath);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on server" });
+    }
 
+    const stat = fs.statSync(filePath);
     res.writeHead(200, {
       "Content-Type": row.mimetype || "video/webm",
       "Content-Length": stat.size,
