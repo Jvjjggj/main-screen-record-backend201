@@ -1,12 +1,20 @@
-// server.js (with upload + fetch + stream)
+// server.js (with upload + fetch + stream + CORS fix)
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const cors = require("cors");
 
 const app = express();
 const PORT = 4001;
+
+// --- enable CORS (for frontend-backend communication) ---
+app.use(cors({
+  origin: "*", // allow all origins (adjust later for production)
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"],
+}));
 
 // --- ensure uploads folder exists ---
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -80,7 +88,8 @@ app.get("/api/recordings", (req, res) => {
 });
 
 // --- API: upload a new recording ---
-app.post("/api/recordings", upload.single("video"), (req, res) => {
+// ✅ expect "recording" as field name (matches frontend)
+app.post("/api/recordings", upload.single("recording"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
