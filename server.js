@@ -118,32 +118,45 @@ app.post("/api/recordings", upload.single("video"), (req, res) => {
 
 // --- API: stream a specific recording ---
 app.get("/api/recordings/:id", (req, res) => {
-  const recordingId = req.params.id;
+  const id = req.params.id;
+  db.get("SELECT filename FROM recordings WHERE id = ?", [id], (err, row) => {
+    if (err || !row) return res.status(404).send("Recording not found");
 
-  db.get("SELECT * FROM recordings WHERE id = ?", [recordingId], (err, row) => {
-    if (err) {
-      console.error("❌ DB error:", err.message);
-      return res.status(500).json({ error: "Failed to fetch recording" });
-    }
-    if (!row) {
-      return res.status(404).json({ error: "Recording not found" });
-    }
+    const filePath = path.join(UPLOAD_DIR, row.filename);
 
-    const filePath = row.filepath;
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "File not found on server" });
-    }
+    fs.stat(filePath, (err, stats) => {
+      if (err) {
+        return res.status(404).send("File not found");
+      }
 
-    const stat = fs.statSync(filePath);
-    res.writeHead(200, {
-      "Content-Type": row.mimetype || "video/webm",
-      "Content-Length": stat.size,
+      let range = req.headers.range;
+      if (!range) {
+        // No range → send whole file
+        res.writeHead(200, {
+          "Content-Type": "video/webm",
+          "Content-Length": stats.size,
+        });
+        fs.createReadStream(filePath).pipe(res);
+      } else {
+        // Partial request (streaming)
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          "Content-Range": `bytes ${start}-${end}/${stats.size}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunkSize,
+          "Content-Type": "video/webm",
+        });
+
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+      }
     });
-
-    const readStream = fs.createReadStream(filePath);
-    readStream.pipe(res);
   });
 });
+
 
 // --- start server ---
 app.listen(PORT, () => {
